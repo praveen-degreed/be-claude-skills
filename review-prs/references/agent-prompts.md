@@ -25,6 +25,18 @@ INSTRUCTIONS:
 - Load references/codebase-patterns.md for project-specific patterns.
 - When unsure about a library pattern, use context7 to fetch current documentation.
 - When unsure about a best practice, use WebSearch to verify.
+
+LINE NUMBER RULES (CRITICAL):
+- Report SOURCE FILE line numbers, NOT diff file line numbers.
+- Extract line numbers from unified diff headers: @@ -old_start,old_count +new_start,new_count @@
+- For added/modified lines (starting with +), use the new_start offset. Count lines from the @@ header:
+    @@ -10,5 +12,8 @@     <- new file starts at line 12
+     unchanged line          <- line 12
+    +added line              <- line 13 (report THIS number)
+    +another added line      <- line 14
+- For removed lines (starting with -), use the old_start offset.
+- NEVER report the line number of the diff file itself (e.g., line 1596 of the diff when the source file is only 996 lines).
+- When in doubt, use the worktree path to open the actual source file and find the correct line number.
 ```
 
 ---

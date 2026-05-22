@@ -17,6 +17,12 @@ Before including a finding in the review, assess its real-world probability and 
 **Downgrade**: Include but reduce severity by one level
 **Drop**: Exclude from review (record in dropped findings section)
 
+### False Positive Filter (apply BEFORE probability/impact)
+
+DROP findings that match these known false positive patterns:
+- **Feature gating via Optional[None]**: Fields defaulting to None that gate new features across service boundaries (e.g., .NET → Python) are intentional. The feature being "silently disabled" IS the expected behavior during rollout. Do not flag missing error/warning/health-check for these.
+- **Line number mismatch**: If your reported line number exceeds the total lines in the source file, you have reported a diff line number instead of a source file line number. Recalculate from the @@ header before including the finding.
+
 ### How to Assess Probability
 
 - **High**: Happens in normal user flow. Example: missing await on a coroutine called every request.

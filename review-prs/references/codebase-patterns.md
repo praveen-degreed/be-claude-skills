@@ -347,7 +347,33 @@ Use existing constants from `app/utils/constants.py`:
 - `ProcessingKeys` - 16+ event keys
 - `CoachFieldLimits` - name(100), description(400), instructions(10000)
 
-## 18. Concurrency Control for LLM Calls
+## 18. Valid Patterns — NOT Findings
+
+These are intentional design patterns. Do NOT flag them as issues.
+
+```python
+# VALID: Feature gating via Optional field defaulting to None
+# When .NET CoachOrchestrator adds a new capability field (e.g., canReferenceTeamData),
+# it may not be present in all environments yet. Defaulting to None silently
+# disables the feature — this is the EXPECTED rollout pattern, not a bug.
+class SomeModel(BaseModel):
+    new_capability: bool | None = None  # VALID — feature disabled until .NET sends it
+
+# In usage:
+if session.new_capability:
+    # feature-gated code runs only when .NET explicitly enables it
+    await do_new_thing()
+# else: feature is silently off — THIS IS CORRECT, not a missing error/warning
+```
+
+Do NOT flag:
+- Optional fields defaulting to None for feature gating across service boundaries
+- Features silently disabled when upstream (.NET) hasn't enabled them yet
+- No error/warning/health-check for a feature gate being off — that's by design
+
+---
+
+## 19. Concurrency Control for LLM Calls
 
 ```python
 # CORRECT - bounded concurrency
