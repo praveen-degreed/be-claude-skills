@@ -48,6 +48,8 @@ FILES=(
     "review-prs/references/cross-repo-contracts.md:$SKILL_DIR/references/cross-repo-contracts.md"
     "review-prs/references/fairness-checks.md:$SKILL_DIR/references/fairness-checks.md"
     "review-prs/references/voice-checks.md:$SKILL_DIR/references/voice-checks.md"
+    "review-prs/references/agent-graph-checks.md:$SKILL_DIR/references/agent-graph-checks.md"
+    "review-prs/references/vector-checks.md:$SKILL_DIR/references/vector-checks.md"
     "review-prs/references/astdup.py:$SKILL_DIR/references/astdup.py"
 )
 

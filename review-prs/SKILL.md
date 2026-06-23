@@ -3,9 +3,10 @@ name: review-prs
 description: >-
   Deep, high-signal pull-request review for the Degreed Coach Builder
   Python/FastAPI backend (Azure OpenAI, Redis, LiveKit voice, DataDog). Runs up
-  to 8 specialized agents covering code quality, OWASP LLM Top 10 security,
+  to 9 specialized agents covering code quality, OWASP LLM Top 10 security,
   prompt-injection & voice/agent safety, async/memory performance, LLM-output
-  fairness, Redis patterns, cross-repo .NET contract drift, blast radius, and
+  fairness, Redis patterns, LangGraph state/lock/checkpointer correctness,
+  vector-search semantics, cross-repo .NET contract drift, blast radius, and
   test coverage — then validates every finding with an adversarial second pass
   before posting. Use this when asked to "review a PR / pull request", "check a
   PR", "is this PR ready", or "review this PR --deep". Pass --deep for two
@@ -69,11 +70,12 @@ Compute a score to decide depth automatically (no manual flag needed):
 | >20 files changed | +5 |
 | >500 lines added/deleted | +3 |
 | Touches `app/api/`, `app/llm/`, `app/db/redis_*`, `app/realtime/`, `app/services/validation` | +2 each |
-| Redis schema / vector store / Pydantic request-response model change | +2 |
+| Touches `app/agents/**` (LangGraph graph/nodes/state/session-lock/checkpointer) or a new `app/services/<feature>/` package | +2 each |
+| Redis schema / vector store / vector-threshold / Pydantic request-response model change | +2 |
 | Prompt template / guardrail / tool-schema change | +2 |
 | New dependency in requirements.txt | +1 |
 
-**Hard overrides (force deep mode regardless of score):** any change to auth (`security_validation`, `internal_auth`, middleware, `cookie_manager`), `server.py`, `settings.py`, `redis_manager`, `log_manager`, `api/__init__.py`, or files matching `prompt|sanitiz|auth|translat`.
+**Hard overrides (force deep mode regardless of score):** any change to auth (`security_validation`, `internal_auth`, middleware, `cookie_manager`), `server.py`, `settings.py`, `redis_manager`, `log_manager`, `api/__init__.py`, anything under `app/agents/**` (stateful LangGraph agents, session locks, checkpointers), or files matching `prompt|sanitiz|auth|translat|session_lock|checkpoint|circuit|breaker`.
 
 **Score ≥ 7 OR any hard override → run Deep Mode** (`references/deep-mode.md`). Otherwise standard mode. Tell the user which mode was selected and why.
 
@@ -99,9 +101,10 @@ Agent 5: py-architecture-reviewer— SOLID, data layer, reuse/duplication (astdu
 Agent 6: py-impact-analyzer      — in-repo + cross-repo .NET contract chains, prompt chains, blast radius
 Agent 7: py-fairness-reviewer    — LLM-output fairness/bias, language parity (load if prompts/identity/multilingual touched)
 Agent 8: py-voice-reviewer       — LiveKit/realtime turn/interruption/budget, voice DTO breakage (load if realtime touched)
+Agent 9: py-agent-graph-reviewer — LangGraph state-channel/reducer semantics, distributed-lock TTL vs budget, checkpointer Redis I/O, circuit-breaker/resilience state machines, vector distance-vs-similarity (load if app/agents/** or a stateful service package touched)
 ```
 
-Agents 7 and 8 are **conditional** — spawn only when the diff touches the relevant surface (prompt templates / identity interpolation / multilingual for fairness; `realtime`/voice/agent-session for voice). Each agent returns raw, unfiltered findings in the standard finding format (see below).
+Agents 7, 8, and 9 are **conditional** — spawn only when the diff touches the relevant surface (prompt templates / identity interpolation / multilingual for fairness; `realtime`/voice/agent-session for voice; `app/agents/**`, session locks, checkpointers, circuit breakers, or vector-threshold logic for agent-graph). Each agent returns raw, unfiltered findings in the standard finding format (see below).
 
 ### Phase 3 — Dedup Stage (NEW — before filtering)
 
@@ -109,6 +112,8 @@ The agents overlap (code + logic + architecture often flag the same site). Merge
 - **Deterministic merge** only on identical `(file, source_line)`.
 - **Narrow LLM merge** only if same `(file, function, issue_class)` AND `|line_a − line_b| ≤ 5` AND both describe the same source construct. Use **max severity**, credit all agents (agreement count = a confidence signal).
 - "Related" findings are cross-referenced, never merged. **When in doubt, do not merge.**
+
+> **Dedup-failure fallback (graceful degradation):** the dedup step is a single agent and can fail (timeout, stall, socket error). If it errors or returns nothing, **do NOT abort** — skip merging, carry the raw findings straight into Phase 4 validation, and note "dedup skipped — validating unmerged set" in the run log. Validation is per-finding, so unmerged near-duplicates cost a little extra work but never lose a finding; collapse any surviving duplicates by hand in Phase 5. Never let a dedup failure block the verdict.
 
 ### Phase 4 — Validation Second Pass (NEW — the core anti-false-positive step)
 
@@ -188,7 +193,7 @@ Auto-triggered by Phase 1.4, or forced with `--deep`. Two independent reviewers 
 
 | File | Purpose | When Loaded |
 |------|---------|-------------|
-| `references/agent-prompts.md` | System prompts for all 8 agents + the validation sub-agent | Phase 2, 4 |
+| `references/agent-prompts.md` | System prompts for all 9 agents + the validation sub-agent | Phase 2, 4 |
 | `references/decision-rules.md` | Confidence cutoff, precedents, severity levers, approve/reject criteria | Phase 4–5 |
 | `references/review-template.md` | GitHub review template (18 categories) | Phase 5 |
 | `references/deep-mode.md` | Adversarial 2-reviewer consensus + self-critique protocol | Phase 1.4 (deep) |
@@ -198,4 +203,6 @@ Auto-triggered by Phase 1.4, or forced with `--deep`. Two independent reviewers 
 | `references/cross-repo-contracts.md` | Reading & diffing the .NET `degreed/Degreed` DTOs | Phase 2 (agent 6) |
 | `references/fairness-checks.md` | Inference-time LLM-output fairness & language-parity checks | Phase 2 (agent 7) |
 | `references/voice-checks.md` | LiveKit/realtime agent review checks | Phase 2 (agent 8) |
+| `references/agent-graph-checks.md` | LangGraph state/reducer, lock-TTL, checkpointer I/O, circuit-breaker, cross-mode resume | Phase 2 (agent 9) |
+| `references/vector-checks.md` | Cosine distance-vs-similarity, threshold parity, `.format()` param-drop, embedding dims | Phase 2 (agents 9, 5) |
 | `references/astdup.py` | Stdlib AST-skeleton duplicate/near-dup detector | Phase 2 (agent 5) |
