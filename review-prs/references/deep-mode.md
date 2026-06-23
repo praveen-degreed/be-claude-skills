@@ -1,87 +1,69 @@
 # Deep Mode Protocol
 
-Activated with `--deep` flag. Uses 2 independent reviewers with consensus logic for higher confidence.
+Auto-triggered by the Phase 1.4 complexity score (≥7 or any hard override), or forced with `--deep`. Two independent reviewers + consensus + one impact-analyzer + a Stage-2 self-critique, for higher confidence on high-risk PRs.
 
-## When to Recommend Deep Mode
+## When it fires (auto)
 
-Recommend deep mode when ANY of these are true:
-- Authentication/authorization changes (SecurityValidation, login_utils, cookie_manager)
-- LLM prompt or strategy changes (prompt_strategies/, prompt.py, generate_prompt.py)
-- >600 LOC additions/deletions
-- >4 directories touched
-- Shared service/utility changes (redis_manager, settings, log_manager, security_validation)
-- Redis schema or vector store changes
-- Tool definition changes (llm/tools/)
-- Guardrail definition changes
-- Agent session contract changes (affects LiveKit workers)
+Score ≥ 7, OR any change to: auth (`security_validation`, `internal_auth`, middleware, `cookie_manager`), `server.py`, `settings.py`, `redis_manager`, `log_manager`, `api/__init__.py`, prompt/guardrail/tool-schema files, or files matching `prompt|sanitiz|auth|translat`.
 
 ## Workflow
 
-### Step 1: Create Team
+### Step 1 — Two independent reviewers (one adversarial)
 
-```
-TeamCreate with name "pr-review-{PR_NUMBER}"
-```
+Spawn in parallel (background Agent calls — no team primitives required):
 
-### Step 2: Spawn 2 Independent Reviewers
+- **Reviewer-A** — full independent pass across all applicable dimensions (runs agents 1–5, +7/+8 if relevant).
+- **Reviewer-B** — the **CHALLENGER**. Reframed adversarially: its job is to *falsify*, not confirm. It runs its own independent pass AND, where it can see Reviewer-A's territory, actively tries to disprove likely findings. Distinct framing beats a duplicate pass — asking an agent to mark its own homework finds nothing new.
 
-Launch Reviewer-A and Reviewer-B in parallel. Each reviewer independently:
-1. Receives the full PR diff and review history
-2. Launches 5 of the 6 agents as Task agents in parallel (excludes py-impact-analyzer — too expensive to run twice)
-3. Collects all unfiltered findings
-4. Sends ALL findings back to the team lead via SendMessage
+Each returns ALL raw findings (unfiltered) with evidence lines.
 
-### Step 3: Run Impact Analyzer Once
+> Efficiency note: the prescribed lean shape is **2 reviewers + 1 impact analyzer = 3 background agents** (each reviewer does a combined multi-dimension pass). Only fan out to the full 5-agents-per-reviewer team form for the very largest PRs.
 
-The team lead runs py-impact-analyzer once (not duplicated) since contract/prompt chain analysis is deterministic.
+### Step 2 — Impact analyzer once
 
-### Step 4: Consensus Logic
+Run `py-impact-analyzer` a single time (contract/prompt-chain analysis is deterministic; no value in duplicating it). Include the cross-repo .NET contract pass.
 
-Before applying the practical filter, apply consensus:
+### Step 3 — Consensus merge
 
-| Found By | Action |
+| Found by | Action |
 |----------|--------|
-| **BOTH reviewers** | High confidence. **KEEP** — skip probability check, go straight to impact assessment |
-| **ONE reviewer only** | Apply standard probability x impact filter from decision-rules.md |
+| **BOTH reviewers** | High confidence. Keep; go straight to impact assessment (skip the probability gate). |
+| **ONE reviewer only** | Standard validation pass + four-axis filter. |
 
-### Step 5: Merge and Post
+Merge rules (from multi-reviewer best practice):
+- Same location + same problem → **merge into one finding, credit all reviewers** (agreement count = confidence signal).
+- Use **MAX severity**, not average (averaging hides Criticals).
+- **Guardrail against over-escalation:** a finding may be labeled **Critical / blocking only with 2-of-2 reviewer agreement** OR an undisputed validation-pass confirmation. A lone reviewer's "Critical" with no corroboration is capped at High pending validation.
+- Conflicting recommendations → include both with attribution.
 
-1. Merge consensus findings with impact analyzer findings
-2. Apply practical filter on single-reviewer findings
-3. Format using review template
-4. Add "Consensus Findings" section to review:
+### Step 4 — Validation pass
 
-```markdown
-### Consensus Findings (found by both reviewers)
+Run the Phase 4 validation sub-agent on every surviving finding (deep-mode confidence cutoff = **< 7** drop). Honor `ACTIVELY_HARMFUL` vetoes.
 
-| # | Finding | Severity | Confidence |
-|---|---------|----------|------------|
-| {n} | {title} | {severity} | HIGH (consensus) |
-```
+### Step 5 — Stage-2 self-critique (final sweep)
 
-5. Post review via `gh pr review`
+One sequential pass over the ACCEPTED findings only: *"Which of these would I retract under scrutiny? Did any fix suggestion introduce a regression or contradict another finding?"* Catches inconsistencies introduced by the review itself. Deduplicate by `(area, issue)`, keep higher confidence.
 
-### Step 6: Cleanup
+### Step 6 — Compose, confirm, post
 
-```
-TeamDelete to shut down the team
-```
+Add the Deep Mode Analysis block (below) to the review. **Confirm with the user before posting** (Phase 5). Restore the original branch on cleanup.
 
-## Deep Mode Review Template Addition
+## Partial-failure rule
 
-Add this section after "PR Health" and before "Action Required":
+If one reviewer or the impact analyzer dies (terminal error), **continue with the survivors** and mark the review **PARTIAL** in the header — do NOT abort and do NOT auto-post `--approve`/`--request-changes` on a partial run; present findings for a manual decision.
+
+## Review template addition
 
 ```markdown
 ### Deep Mode Analysis
-
-- **Review Mode**: Deep (2 independent reviewers + consensus)
-- **Reviewer-A findings**: {count}
-- **Reviewer-B findings**: {count}
-- **Consensus findings**: {count} (found by both)
-- **Single-reviewer findings after filter**: {count}
-- **Impact analyzer findings**: {count}
+- **Review Mode**: Deep (2 independent reviewers, one adversarial challenger + consensus + self-critique)
+- **Trigger**: {complexity score N | hard override: <file>}
+- **Reviewer-A findings**: {n}   **Reviewer-B (challenger) findings**: {n}
+- **Consensus (both)**: {n}   **Single-reviewer after filter**: {n}
+- **Impact analyzer**: {n}   **Retracted in self-critique**: {n}
+- **Status**: {Complete | PARTIAL — <which agent failed>}
 ```
 
-## Cost Consideration
+## Cost note
 
-Deep mode launches ~11 agents (5 per reviewer + 1 impact analyzer) instead of 6. Use only when the PR warrants the additional scrutiny. For routine PRs, standard mode is sufficient.
+Lean form ≈ 3 background agents + N validation sub-agents. Full team form ≈ 11+. Prefer the lean form; escalate only for the largest PRs.

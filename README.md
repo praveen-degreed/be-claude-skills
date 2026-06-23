@@ -4,22 +4,28 @@ Backend PR review skill for [Claude Code](https://claude.com/claude-code) — de
 
 ## Skills
 
-### review-prs
+### review-prs `v2`
 
-Reviews pull requests against project conventions, OWASP LLM Top 10 security standards, async/memory performance patterns, and industry best practices using 6 parallel review agents.
+High-signal pull-request review against project conventions, OWASP LLM Top 10, async/memory performance, LLM-output fairness, voice/agent safety, Redis patterns, cross-repo .NET contract drift, and blast radius — with an **adversarial validation pass** that confirms every finding from source before it's reported.
 
-**Agents:**
+**Design principle:** *only high-signal findings.* A false positive erodes trust. Every finding must quote a verified source line, carry a 1–10 confidence, and survive an independent validation sub-agent. Findings below the confidence cutoff are dropped.
+
+**Agents (up to 8 — last two are conditional):**
 
 | Agent | Focus |
 |-------|-------|
-| py-code-reviewer | Implementation quality, endpoint patterns, Python typing, dead code, memory patterns |
-| py-logic-reviewer | Logic errors, async correctness, OWASP LLM Top 10, prompt injection, edge cases |
-| py-test-analyzer | Test quality, coverage, fixture usage, LLM eval coverage |
-| py-simplifier | Pythonic idioms, code simplification, performance patterns (NON-BLOCKING) |
-| py-architecture-reviewer | Architecture, SOLID, data layer, observability, utility reuse |
-| py-impact-analyzer | Contract chains, prompt chains, blast radius, settings impact |
+| py-code-reviewer | Endpoint patterns, typing, dead code, memory patterns |
+| py-logic-reviewer | Logic, async correctness, OWASP LLM01–10, prompt injection, edge cases |
+| py-test-analyzer | Test quality, coverage, fixtures, deterministic-CI-failure checks |
+| py-simplifier | Pythonic idioms, reuse/duplication, performance (NON-BLOCKING) |
+| py-architecture-reviewer | SOLID, data layer, utility reuse + AST duplicate detection, LLM trust-boundary & agent safety |
+| py-impact-analyzer | In-repo + **cross-repo .NET** contract chains, prompt chains, blast radius |
+| py-fairness-reviewer *(conditional)* | Inference-time LLM-output fairness & language parity |
+| py-voice-reviewer *(conditional)* | LiveKit/realtime turn/interruption/budget, voice DTO breakage |
 
-**18 review categories** mapped to OWASP LLM Top 10 (LLM01-LLM10).
+**20 review categories** mapped to OWASP LLM Top 10 (LLM01–LLM10).
+
+**Pipeline:** pre-flight gate → **pin to live PR head SHA** → complexity-score auto-deep → parallel agents → **dedup** → **adversarial validation pass** → confidence/precedents filter → confirm-before-post.
 
 ## Installation
 
@@ -39,7 +45,7 @@ This installs the skill to `.claude/skills/review-prs/`.
 
 ## Usage
 
-In Claude Code, use any of these triggers:
+In Claude Code:
 
 ```
 review <PR_URL>
@@ -49,7 +55,7 @@ review this PR --deep
 
 ### Deep Mode
 
-Add `--deep` for high-risk PRs (auth changes, prompt changes, >600 LOC, shared utilities). Deep mode uses 2 independent reviewers with consensus logic for higher confidence findings.
+Auto-triggered by a complexity score (>20 files, >500 LOC, or touching auth/prompt/Redis/realtime paths), or forced with `--deep`. Uses two independent reviewers — one an **adversarial challenger** — plus consensus, a single impact-analyzer pass, and a Stage-2 self-critique.
 
 ## Prerequisites
 
@@ -60,13 +66,18 @@ Add `--deep` for high-risk PRs (auth changes, prompt changes, >600 LOC, shared u
 
 ```
 review-prs/
-  SKILL.md                          # Entry point — 6-phase execution flow
+  SKILL.md                          # Entry point — pinned-head, validated, high-signal flow
   install.sh                        # One-line installer
   references/
-    agent-prompts.md                # System prompts for all 6 agents
-    decision-rules.md               # APPROVE/REJECT criteria, practical filter
-    review-template.md              # GitHub PR comment template (18 categories)
+    agent-prompts.md                # System prompts for all 8 agents + the validation sub-agent
+    decision-rules.md               # Precedents, confidence cutoff, severity levers, approve/reject
+    review-template.md              # GitHub review template (20 categories)
     codebase-patterns.md            # Project-specific correct/wrong patterns
     python-patterns.md              # Python/FastAPI/async anti-pattern reference
-    deep-mode.md                    # 2-reviewer consensus protocol
+    deep-mode.md                    # Adversarial 2-reviewer consensus + self-critique
+    llm-security-checks.md          # OWASP LLM taxonomy, per-tool abuse, agentic/voice threat model
+    cross-repo-contracts.md         # Reading & diffing the .NET degreed/Degreed DTOs
+    fairness-checks.md              # Inference-time LLM-output fairness & language parity
+    voice-checks.md                 # LiveKit/realtime agent review checks
+    astdup.py                       # Stdlib AST duplicate/near-dup detector
 ```

@@ -44,6 +44,11 @@ FILES=(
     "review-prs/references/deep-mode.md:$SKILL_DIR/references/deep-mode.md"
     "review-prs/references/codebase-patterns.md:$SKILL_DIR/references/codebase-patterns.md"
     "review-prs/references/python-patterns.md:$SKILL_DIR/references/python-patterns.md"
+    "review-prs/references/llm-security-checks.md:$SKILL_DIR/references/llm-security-checks.md"
+    "review-prs/references/cross-repo-contracts.md:$SKILL_DIR/references/cross-repo-contracts.md"
+    "review-prs/references/fairness-checks.md:$SKILL_DIR/references/fairness-checks.md"
+    "review-prs/references/voice-checks.md:$SKILL_DIR/references/voice-checks.md"
+    "review-prs/references/astdup.py:$SKILL_DIR/references/astdup.py"
 )
 
 # Fetch each file

@@ -99,9 +99,21 @@ Format the review as a GitHub PR comment using this template. Replace placeholde
 
 #### 17. Test Quality — {PASS | CONCERN | FAIL}
 {findings or "Tests are meaningful and follow project patterns."}
+{IF any test will deterministically fail CI: list as a blocking High finding}
 
-#### 18. Simplification Opportunities — NON-BLOCKING
+#### 18. Simplification & Reuse / Duplication — NON-BLOCKING
 {suggestions or "No simplification opportunities identified."}
+{astdup.py clone clusters, if any}
+
+---
+
+### Fairness & Voice (conditional)
+
+#### 19. LLM-Output Fairness & Language Parity (LLM09) — {PASS | CONCERN | FAIL | N/A}
+{findings or "No identity/language-sensitive paths changed." or "N/A"}
+
+#### 20. Voice & Realtime Agent Safety (LLM06) — {PASS | CONCERN | FAIL | N/A}
+{findings or "No realtime/voice surface changed." or "N/A"}
 
 ---
 
@@ -143,5 +155,5 @@ The following must be addressed before this PR can be approved:
 
 ---
 
-*Reviewed by PR Review Skill v1.0 | [Report Issue](https://github.com/degreed/degreed-coach-builder/issues)*
+*Reviewed by review-prs v2.0 (validated, high-signal) | [be-claude-skills](https://github.com/praveen-degreed/be-claude-skills)*
 ```
