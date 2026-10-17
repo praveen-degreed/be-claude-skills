@@ -13,7 +13,8 @@
 set -euo pipefail
 
 REPO="praveen-degreed/be-claude-skills"
-SKILL_DIR=".claude/skills/review-prs"
+SKILL_DIR="$HOME/.claude/skills/review-prs-be"   # global; review-prs is the frontend skill
+AGENTS_DIR="$HOME/.claude/agents"
 BRANCH="main"
 
 # Colors
@@ -33,7 +34,7 @@ gh auth status >/dev/null 2>&1 || error "GitHub CLI not authenticated. Run: gh a
 info "Installing review-prs skill for degreed-coach-builder..."
 
 # Create skill directory
-mkdir -p "$SKILL_DIR/references"
+mkdir -p "$SKILL_DIR/references" "$AGENTS_DIR"
 
 # Files to fetch
 FILES=(
@@ -51,6 +52,19 @@ FILES=(
     "review-prs/references/agent-graph-checks.md:$SKILL_DIR/references/agent-graph-checks.md"
     "review-prs/references/vector-checks.md:$SKILL_DIR/references/vector-checks.md"
     "review-prs/references/astdup.py:$SKILL_DIR/references/astdup.py"
+    "review-prs/agents/py-code-reviewer.md:$AGENTS_DIR/py-code-reviewer.md"
+    "review-prs/agents/py-logic-reviewer.md:$AGENTS_DIR/py-logic-reviewer.md"
+    "review-prs/agents/py-test-analyzer.md:$AGENTS_DIR/py-test-analyzer.md"
+    "review-prs/agents/py-simplifier.md:$AGENTS_DIR/py-simplifier.md"
+    "review-prs/agents/py-architecture-reviewer.md:$AGENTS_DIR/py-architecture-reviewer.md"
+    "review-prs/agents/py-impact-analyzer.md:$AGENTS_DIR/py-impact-analyzer.md"
+    "review-prs/agents/py-fairness-reviewer.md:$AGENTS_DIR/py-fairness-reviewer.md"
+    "review-prs/agents/py-voice-reviewer.md:$AGENTS_DIR/py-voice-reviewer.md"
+    "review-prs/agents/py-agent-graph-reviewer.md:$AGENTS_DIR/py-agent-graph-reviewer.md"
+    "review-prs/agents/py-contract-checker.md:$AGENTS_DIR/py-contract-checker.md"
+    "review-prs/agents/py-judge.md:$AGENTS_DIR/py-judge.md"
+    "review-prs/agents/py-judge-escalation.md:$AGENTS_DIR/py-judge-escalation.md"
+    "review-prs/REVIEW.md.example:$SKILL_DIR/REVIEW.md.example"
 )
 
 # Fetch each file
@@ -91,11 +105,14 @@ fi
 echo ""
 info "Installation complete!"
 echo ""
-echo "  Skill location: $SKILL_DIR/"
+echo "  Skill location:  $SKILL_DIR/"
+echo "  Agents location: $AGENTS_DIR/ (restart Claude Code to load them)"
 echo ""
 echo "  Usage:"
-echo "    review <PR_URL>"
-echo "    review PR #123"
-echo "    review this PR --deep"
+echo "    /review-prs-be <PR_URL>"
+echo "    \"review PR #123\""
+echo "    \"review this PR --deep\""
+echo ""
+echo "  Optional: copy $SKILL_DIR/REVIEW.md.example to REVIEW.md on your default branch."
 echo ""
 echo "  To update, re-run this script."

@@ -1,14 +1,14 @@
 ---
-name: review-prs
+name: review-prs-be
 description: >-
   Deep, high-signal pull-request review for the Degreed Coach Builder
   Python/FastAPI backend (Azure OpenAI, Redis, LiveKit voice, DataDog). Runs up
-  to 9 specialized agents covering code quality, OWASP LLM Top 10 security,
+  to 10 specialized agents, each with its own model, covering code quality, OWASP LLM Top 10 security,
   prompt-injection & voice/agent safety, async/memory performance, LLM-output
   fairness, Redis patterns, LangGraph state/lock/checkpointer correctness,
-  vector-search semantics, cross-repo .NET contract drift, blast radius, and
+  vector-search semantics, cross-repo .NET and frontend contract drift, blast radius, and
   test coverage — then validates every finding with an adversarial second pass
-  before posting. Use this when asked to "review a PR / pull request", "check a
+  and a final judge before posting. Use this when asked to "review a PR / pull request", "check a
   PR", "is this PR ready", or "review this PR --deep". Pass --deep for two
   independent reviewers + consensus on high-risk PRs.
 ---
@@ -51,6 +51,18 @@ Record `HEAD_SHA` and the starting branch (to restore in Phase 6). Every agent a
 
 > Why this is mandatory: a review run against a stale checkout will "confirm" blockers that were already fixed upstream and post a wrong verdict. Pin the SHA, and key the duplicate-review skip below off that exact SHA.
 
+### Phase 0.5 — Review Rules, Contract Refs, Budget
+
+1. **REVIEW.md from the BASE branch only** (a PR must not rewrite its own reviewer):
+   ```bash
+   BASE=$(gh pr view <number> --json baseRefName --jq .baseRefName)
+   git fetch origin "$BASE"
+   REVIEW_RULES=$(git show "origin/$BASE:REVIEW.md" 2>/dev/null || true)   # empty if absent
+   ```
+   Pass `REVIEW_RULES` to every agent and the judge. Never read `REVIEW.md` from the PR head. See `REVIEW.md.example`.
+2. **Contract refs (latest main, pinned):** resolve the default-branch tip SHA of `<org>/<dotnet-repo>` and `<org>/<frontend-repo>` once, per `references/cross-repo-contracts.md`, and pass as `CONTRACT_REFS` to every agent. Never read local clones of those repos.
+3. **Budget:** set the run limits in "Budget & Limits" below before spawning anything.
+
 ### Phase 1 — Fetch Context
 
 ```bash
@@ -90,21 +102,24 @@ Build a context map (FIXED / STILL OPEN / PARTIALLY FIXED) for every prior findi
 
 ### Phase 2 — Agent Reviews (Parallel)
 
-Launch the specialized agents IN PARALLEL (Agent tool, background). Each receives: the diff, the review-history map, the worktree path, the relevant reference files, and its system prompt from `references/agent-prompts.md`.
+Launch the specialized agents IN PARALLEL (Agent tool, background), each with `subagent_type` = its name below. The agent definitions live in `agents/<name>.md` (installed to `.claude/agents/`) and carry their own model, effort, turn cap and read-only tool settings; do not override them. Each receives, in the task prompt: the shared context from `references/agent-prompts.md` (diff, review-history map, worktree path), `REVIEW_RULES`, `CONTRACT_REFS`, and the relevant reference files.
 
-```
-Agent 1: py-code-reviewer        — endpoint patterns, typing, dead code, memory patterns
-Agent 2: py-logic-reviewer       — logic, async, OWASP LLM01/02/05/06/07/09/10, prompt injection
-Agent 3: py-test-analyzer        — test quality, coverage, fixtures, CI-will-fail checks, eval tests
-Agent 4: py-simplifier           — pythonic idioms, reuse, performance (NON-BLOCKING)
-Agent 5: py-architecture-reviewer— SOLID, data layer, reuse/duplication (astdup), LLM trust-boundary & agent safety
-Agent 6: py-impact-analyzer      — in-repo + cross-repo .NET contract chains, prompt chains, blast radius
-Agent 7: py-fairness-reviewer    — LLM-output fairness/bias, language parity (load if prompts/identity/multilingual touched)
-Agent 8: py-voice-reviewer       — LiveKit/realtime turn/interruption/budget, voice DTO breakage (load if realtime touched)
-Agent 9: py-agent-graph-reviewer — LangGraph state-channel/reducer semantics, distributed-lock TTL vs budget, checkpointer Redis I/O, circuit-breaker/resilience state machines, vector distance-vs-similarity (load if app/agents/** or a stateful service package touched)
-```
+| # | Agent | Model | Focus |
+|---|-------|-------|-------|
+| 1 | `py-code-reviewer` | sonnet | endpoint patterns, typing, dead code, memory patterns |
+| 2 | `py-logic-reviewer` | opus | logic, async, OWASP LLM01/02/05/06/07/09/10, prompt injection |
+| 3 | `py-test-analyzer` | sonnet | test quality, coverage, fixtures, CI-will-fail checks, eval tests |
+| 4 | `py-simplifier` | sonnet | pythonic idioms, reuse, performance (NON-BLOCKING) |
+| 5 | `py-architecture-reviewer` | opus | SOLID, data layer, reuse/duplication (astdup), LLM trust-boundary & agent safety |
+| 6 | `py-impact-analyzer` | opus | in-repo consumer chains, prompt chains, blast radius |
+| 7 | `py-fairness-reviewer` | sonnet | LLM-output fairness/bias, language parity (conditional) |
+| 8 | `py-voice-reviewer` | sonnet | LiveKit/realtime turn/interruption/budget, voice DTO breakage (conditional) |
+| 9 | `py-agent-graph-reviewer` | opus | LangGraph state/reducer, lock TTL vs budget, checkpointer I/O, circuit breakers, vector distance-vs-similarity (conditional) |
+| 10 | `py-contract-checker` | opus | Python vs .NET `<org>/<dotnet-repo>` and frontend `<org>/<frontend-repo>` contract breaks at pinned latest-main SHAs (conditional) |
 
-Agents 7, 8, and 9 are **conditional** — spawn only when the diff touches the relevant surface (prompt templates / identity interpolation / multilingual for fairness; `realtime`/voice/agent-session for voice; `app/agents/**`, session locks, checkpointers, circuit breakers, or vector-threshold logic for agent-graph). Each agent returns raw, unfiltered findings in the standard finding format (see below).
+The model map is a starting hypothesis; tune it with the eval in "Tuning" below. Reviewers report everything they can evidence and tag severity; they do not self-filter (instructions to be conservative suppress real findings). Filtering happens in Phases 4-4.6.
+
+Agents 7, 8, 9, and 10 are **conditional** — spawn only when the diff touches the relevant surface (prompt templates / identity interpolation / multilingual for fairness; `realtime`/voice/agent-session for voice; `app/agents/**`, session locks, checkpointers, circuit breakers, or vector-threshold logic for agent-graph; request/response models, enums, SSE events, or API response shapes for contract-checker). Each agent returns raw, unfiltered findings in the standard finding format (see below).
 
 ### Phase 3 — Dedup Stage (NEW — before filtering)
 
@@ -117,7 +132,7 @@ The agents overlap (code + logic + architecture often flag the same site). Merge
 
 ### Phase 4 — Validation Second Pass (NEW — the core anti-false-positive step)
 
-For EACH surviving finding, launch a parallel validation sub-agent given only: the PR title/description and that single finding. Its job is to **re-open the actual source file and confirm or kill** the finding — adversarially (try to falsify it).
+For EACH surviving finding, launch a parallel validation sub-agent (Agent tool, `model: "sonnet"`, prompt from `references/agent-prompts.md` Validation Sub-Agent) given only: the PR title/description and that single finding. Its job is to **re-open the actual source file and confirm or kill** the finding — adversarially (try to falsify it).
 
 - It must quote the verified **source line** (not a diff offset). If it cannot point to a line, the finding is dropped.
 - It assigns a **confidence 1–10** and a verdict: `TRUE_POSITIVE / LIKELY_TP / LIKELY_FP / FALSE_POSITIVE / OUT_OF_SCOPE`.
@@ -135,9 +150,17 @@ Apply `references/decision-rules.md`:
 
 Record every dropped/downgraded finding with its reason for the report.
 
+### Phase 4.6 — Judge (final decision)
+
+Run `py-judge` (opus, medium effort) once over all findings that survived Phase 4.5. Input: PR title/description, `REVIEW_RULES`, and each finding with its validator verdict and cited code snippet (not the full diff). Output per finding: `CONFIRMED / REFUTED / UNCERTAIN`, final severity, rank, and merge of same-root-cause findings. Only `CONFIRMED` findings go into the review; `REFUTED` ones are listed in the dropped log with the judge's reason.
+
+**Escalation (sparingly):** re-judge a finding with `py-judge-escalation` (fable) only when ALL hold: the judge said `UNCERTAIN`, severity is High or Critical, and the finding touches a high-risk path (the Phase 1.4 hard-override list). Cap at `MAX_ESCALATIONS` (default 3) per review, highest severity first. A finding still `UNCERTAIN` after escalation goes into the review as "Needs human check" with its `human_check` line, never silently dropped, never counted as a blocker on its own.
+
+**Judge failure:** if `py-judge` errors or returns nothing, fall back to the Phase 4.5 result, note "judge skipped" in the footer, and do not auto-post a formal verdict (same rule as the Safety Guardrail).
+
 ### Phase 5 — Compose & Post
 
-1. Format surviving findings into the 18-category template (`references/review-template.md`).
+1. Format `CONFIRMED` findings into the 18-category template (`references/review-template.md`). Add a footer: models used per agent, agent count and escalations, and `verified against <dotnet-repo>@<sha7>, <frontend-repo>@<sha7>` from `CONTRACT_REFS`.
 2. Apply APPROVE / REQUEST CHANGES criteria (`references/decision-rules.md`).
 3. **Present the full review to the user and get explicit confirmation before posting.** Posting a formal review is an outward-facing, hard-to-reverse action on someone's PR.
 4. On confirmation:
@@ -162,6 +185,27 @@ Post **one comment per unique issue** (no duplicates). Only attach a committable
 ### Phase 6 — Cleanup
 
 Restore the user's original branch (`git checkout <starting-branch>`). If deep mode created a team, tear it down. Report completion.
+
+---
+
+## Budget & Limits
+
+Set before Phase 2 and print in the footer:
+
+| Limit | Default | Notes |
+|-------|---------|-------|
+| Reviewer agents | those selected by Phase 2 (max 10) | each also capped by its `maxTurns` |
+| Validators | one per finding that survives dedup; cap 40, highest severity first | |
+| `MAX_ESCALATIONS` | 3 | fable judge calls |
+| Fix-review loops | 3 rounds | after 3, stop and ask for a rethink instead of looping |
+
+Hard caps for the harness (set in the environment that runs the review): `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, and `max_budget_usd` when running via the Agent SDK. If a cap is hit, mark the review PARTIAL and do not auto-post.
+
+Agent `tools` cannot restrict Bash to specific commands, so read-only Bash is by instruction. For enforcement add `permissions.deny` rules in the runner's settings, e.g. `Bash(git push *)`, `Bash(git commit *)`, `Bash(gh pr merge *)`, `Bash(gh pr review *)` (posting is done only by the orchestrator in Phase 5).
+
+## Tuning (eval before changing models)
+
+The model map is a hypothesis. Re-run a PR with known findings (a past PR with confirmed High bugs) with each agent at two models, record recall, false positives and cost, and keep the cheapest model that still finds that agent's bugs. Check the judge keeps the known bugs and drops noise; move to a stronger judge only if the eval shows it finds more.
 
 ---
 
@@ -193,14 +237,16 @@ Auto-triggered by Phase 1.4, or forced with `--deep`. Two independent reviewers 
 
 | File | Purpose | When Loaded |
 |------|---------|-------------|
-| `references/agent-prompts.md` | System prompts for all 9 agents + the validation sub-agent | Phase 2, 4 |
+| `agents/*.md` | The 10 reviewer agents + `py-judge` + `py-judge-escalation` (model/effort/tools frontmatter; installed to `.claude/agents/`) | Phase 2, 4.6 |
+| `references/agent-prompts.md` | Shared context template, shared security/reuse addendum, validation sub-agent prompt | Phase 2, 4 |
+| `REVIEW.md.example` | Template for repo-level review rules (read from the base branch) | Phase 0.5 |
 | `references/decision-rules.md` | Confidence cutoff, precedents, severity levers, approve/reject criteria | Phase 4–5 |
 | `references/review-template.md` | GitHub review template (18 categories) | Phase 5 |
 | `references/deep-mode.md` | Adversarial 2-reviewer consensus + self-critique protocol | Phase 1.4 (deep) |
 | `references/codebase-patterns.md` | Project correct/wrong patterns + valid-not-findings | Phase 2 (all agents) |
 | `references/python-patterns.md` | Python/FastAPI/async anti-pattern reference | Phase 2 (agents 1,2,4) |
 | `references/llm-security-checks.md` | OWASP LLM taxonomy, per-tool abuse, agentic/voice threat model | Phase 2 (agents 2,5,8) |
-| `references/cross-repo-contracts.md` | Reading & diffing the .NET `degreed/Degreed` DTOs | Phase 2 (agent 6) |
+| `references/cross-repo-contracts.md` | Pinned latest-main contract checks vs `<org>/<dotnet-repo>` (.NET) and `<org>/<frontend-repo>` | Phase 0.5, 2 (agent 10) |
 | `references/fairness-checks.md` | Inference-time LLM-output fairness & language-parity checks | Phase 2 (agent 7) |
 | `references/voice-checks.md` | LiveKit/realtime agent review checks | Phase 2 (agent 8) |
 | `references/agent-graph-checks.md` | LangGraph state/reducer, lock-TTL, checkpointer I/O, circuit-breaker, cross-mode resume | Phase 2 (agent 9) |

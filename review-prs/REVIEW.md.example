@@ -1,0 +1,16 @@
+# REVIEW.md
+
+Repo-level rules for the review-prs skill. Commit this to the DEFAULT branch: the skill reads it from the PR's base branch, never from the PR itself.
+
+## Always flag
+- Python request/response models, enums or SSE events that change without a matching update in the .NET or frontend repos.
+- Redis keys that are not scoped by org and user/session, or TTLs shorter than the operation they guard.
+- User-controlled text concatenated into a system prompt.
+
+## Skip
+- Generated files and lockfiles.
+- Formatting and naming preferences.
+- Pre-existing issues the diff does not touch.
+
+## Severity notes
+- Anything on the auth, session-lock, checkpointer or settings paths: treat uncertain Highs as "needs human check", not as dropped.

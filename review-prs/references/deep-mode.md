@@ -67,3 +67,7 @@ If one reviewer or the impact analyzer dies (terminal error), **continue with th
 ## Cost note
 
 Lean form ≈ 3 background agents + N validation sub-agents. Full team form ≈ 11+. Prefer the lean form; escalate only for the largest PRs.
+
+## Judge & caps in deep mode
+
+Deep-mode findings still pass Phase 4.6 (`py-judge`, escalation only for UNCERTAIN High/Critical in high-risk paths, capped by `MAX_ESCALATIONS`). Two-reviewer consensus does not replace the judge. Agent counts and escalations count against the limits in SKILL.md "Budget & Limits"; hitting a cap marks the review PARTIAL.
