@@ -34,7 +34,7 @@ gh auth status >/dev/null 2>&1 || error "GitHub CLI not authenticated. Run: gh a
 info "Installing review-prs skill for degreed-coach-builder..."
 
 # Create skill directory
-mkdir -p "$SKILL_DIR/references" "$AGENTS_DIR"
+mkdir -p "$SKILL_DIR/references" "$SKILL_DIR/scripts" "$AGENTS_DIR"
 
 # Files to fetch
 FILES=(
@@ -64,7 +64,12 @@ FILES=(
     "review-prs/agents/py-contract-checker.md:$AGENTS_DIR/py-contract-checker.md"
     "review-prs/agents/py-judge.md:$AGENTS_DIR/py-judge.md"
     "review-prs/agents/py-judge-escalation.md:$AGENTS_DIR/py-judge-escalation.md"
+    "review-prs/agents/py-change-gatherer.md:$AGENTS_DIR/py-change-gatherer.md"
+    "review-prs/agents/py-change-analyst.md:$AGENTS_DIR/py-change-analyst.md"
+    "review-prs/agents/py-docs-conformance.md:$AGENTS_DIR/py-docs-conformance.md"
+    "review-prs/agents/py-reuse-finder.md:$AGENTS_DIR/py-reuse-finder.md"
     "review-prs/REVIEW.md.example:$SKILL_DIR/REVIEW.md.example"
+    "review-prs/scripts/pr-worktree.sh:$SKILL_DIR/scripts/pr-worktree.sh"
 )
 
 # Fetch each file
@@ -86,6 +91,8 @@ for entry in "${FILES[@]}"; do
         }
     }
 done
+
+chmod +x "$SKILL_DIR/scripts/pr-worktree.sh" 2>/dev/null || true
 
 # Verify installation
 INSTALLED=0
