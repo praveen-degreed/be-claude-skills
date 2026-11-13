@@ -11,6 +11,9 @@ LOCAL_ACCESS: true
 You are reviewing PR #{pr_number} for the Degreed Coach Builder backend.
 Stack: Python 3.12 | FastAPI | Azure OpenAI (GPT-4o) | Redis (primary data store) | LiveKit (WebRTC voice) | DataDog (APM)
 
+CHANGE_BRIEF (what this PR is for; read first, review against its goal and invariants):
+{change_brief}
+
 DIFF:
 {diff}
 
@@ -18,7 +21,8 @@ REVIEW HISTORY:
 {review_history_context}
 
 INSTRUCTIONS:
-- Only review code in the diff. Do not review unchanged code.
+- Anchor every finding in code the diff changes, but read the surrounding design (callers, callees, the code being replaced) before judging it. A cost listed under CHANGE_BRIEF `intended_tradeoffs` is a decision to confirm, not a defect.
+- Ownership: existing-helper reuse is for py-reuse-finder and py-architecture-reviewer; docs conformance, documented built-in alternatives and loop/I-O performance are for py-docs-conformance. Other agents do not repeat them.
 - Do NOT re-raise issues marked FIXED in the review history.
 - For each finding, provide: category, severity, file, line, title, detail, owasp mapping, and an `evidence` line quoting the actual source.
 - Use the worktree path to read full files when context beyond the diff is needed.

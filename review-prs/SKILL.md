@@ -3,7 +3,7 @@ name: review-prs-be
 description: >-
   Deep, high-signal pull-request review for the Degreed Coach Builder
   Python/FastAPI backend (Azure OpenAI, Redis, LiveKit voice, DataDog). Runs up
-  to 10 specialized agents, each with its own model, covering code quality, OWASP LLM Top 10 security,
+  to 12 specialized agents, each with its own model, covering code quality, OWASP LLM Top 10 security,
   prompt-injection & voice/agent safety, async/memory performance, LLM-output
   fairness, Redis patterns, LangGraph state/lock/checkpointer correctness,
   vector-search semantics, cross-repo .NET and frontend contract drift, blast radius, and
@@ -60,7 +60,7 @@ Record `HEAD_SHA` and the starting branch (to restore in Phase 6). Every agent a
    REVIEW_RULES=$(git show "origin/$BASE:REVIEW.md" 2>/dev/null || true)   # empty if absent
    ```
    Pass `REVIEW_RULES` to every agent and the judge. Never read `REVIEW.md` from the PR head. See `REVIEW.md.example`.
-2. **Contract refs (latest main, pinned):** resolve the default-branch tip SHA of `<org>/<dotnet-repo>` and `<org>/<frontend-repo>` once, per `references/cross-repo-contracts.md`, and pass as `CONTRACT_REFS` to every agent. Never read local clones of those repos.
+2. **Contract refs (latest main, pinned):** resolve the default-branch tip SHA of `degreed/Degreed` and `degreed/fe-workspace` once, per `references/cross-repo-contracts.md`, and pass as `CONTRACT_REFS` to every agent. Never read local clones of those repos.
 3. **Budget:** set the run limits in "Budget & Limits" below before spawning anything.
 
 ### Phase 1 — Fetch Context
@@ -72,6 +72,14 @@ gh pr diff $PR_NUMBER --stat
 ```
 
 For a very large diff, do NOT inline it into agents. Check out the branch (Phase 0) and have each agent run `gh pr diff` + read source files from the worktree.
+
+### Phase 1.3 — Change Understanding (BEFORE any review)
+
+Two steps, cheap first:
+1. **`py-change-gatherer`** (haiku) collects the raw facts: the linked ticket (keys `[A-Z][A-Z0-9]+-[0-9]+` from title, branch, body, commits, comments, read with `jira issue view <KEY> --plain` and `--raw` for linked issues and parent), the PR description (a bot-generated body is marked and ignored for intent), full commit-message bodies, the PR author's own comments, and docs in the diff. It returns `SOURCE_FACTS`. If `jira` is unavailable it records `ticket: unavailable`; it never invents ticket content.
+2. **`py-change-analyst`** (opus) receives `SOURCE_FACTS`, reads the changed code, its callers and callees, and the code being replaced, and returns the `CHANGE_BRIEF` (goal, mechanism, success metric, evidence given, intended trade-offs, invariants, assumptions, libraries/APIs touched, code paths to trace, shared-code candidates, open questions). It does not re-fetch what the gatherer already collected.
+
+Every later agent, the validators and the judge receive the `CHANGE_BRIEF`. The brief's `assumptions` and `shared_candidates` are unverified and agents must check them before relying on them. If either step fails, continue with the PR title/body and mark the footer "change brief unavailable"; do not skip the review.
 
 ### Phase 1.4 — Complexity Score → Auto Deep Mode
 
@@ -102,7 +110,7 @@ Build a context map (FIXED / STILL OPEN / PARTIALLY FIXED) for every prior findi
 
 ### Phase 2 — Agent Reviews (Parallel)
 
-Launch the specialized agents IN PARALLEL (Agent tool, background), each with `subagent_type` = its name below. The agent definitions live in `agents/<name>.md` (installed to `.claude/agents/`) and carry their own model, effort, turn cap and read-only tool settings; do not override them. Each receives, in the task prompt: the shared context from `references/agent-prompts.md` (diff, review-history map, worktree path), `REVIEW_RULES`, `CONTRACT_REFS`, and the relevant reference files.
+Launch the specialized agents IN PARALLEL (Agent tool, background), each with `subagent_type` = its name below. The agent definitions live in `agents/<name>.md` (installed to `.claude/agents/`) and carry their own model, effort, turn cap and read-only tool settings; do not override them. Each receives, in the task prompt: the shared context from `references/agent-prompts.md` (diff, review-history map, worktree path), `REVIEW_RULES`, `CHANGE_BRIEF`, `CONTRACT_REFS`, and the relevant reference files. Every reviewer reads `CHANGE_BRIEF` first and reviews the code against the change's goal, not just a checklist.
 
 | # | Agent | Model | Focus |
 |---|-------|-------|-------|
@@ -115,11 +123,13 @@ Launch the specialized agents IN PARALLEL (Agent tool, background), each with `s
 | 7 | `py-fairness-reviewer` | sonnet | LLM-output fairness/bias, language parity (conditional) |
 | 8 | `py-voice-reviewer` | sonnet | LiveKit/realtime turn/interruption/budget, voice DTO breakage (conditional) |
 | 9 | `py-agent-graph-reviewer` | opus | LangGraph state/reducer, lock TTL vs budget, checkpointer I/O, circuit breakers, vector distance-vs-similarity (conditional) |
-| 10 | `py-contract-checker` | opus | Python vs .NET `<org>/<dotnet-repo>` and frontend `<org>/<frontend-repo>` contract breaks at pinned latest-main SHAs (conditional) |
+| 10 | `py-contract-checker` | opus | Python vs .NET `degreed/Degreed` and frontend `degreed/fe-workspace` contract breaks at pinned latest-main SHAs (conditional) |
+| 11 | `py-docs-conformance` | opus | code vs the official docs of the libraries/APIs it uses; documented or built-in alternatives; loop, batching, retry and I/O performance (conditional, see below) |
+| 12 | `py-reuse-finder` | sonnet | existing shared helpers/modules the new code duplicates or bypasses, with a concrete replacement (runs on any code change) |
 
 The model map is a starting hypothesis; tune it with the eval in "Tuning" below. Reviewers report everything they can evidence and tag severity; they do not self-filter (instructions to be conservative suppress real findings). Filtering happens in Phases 4-4.6.
 
-Agents 7, 8, 9, and 10 are **conditional** — spawn only when the diff touches the relevant surface (prompt templates / identity interpolation / multilingual for fairness; `realtime`/voice/agent-session for voice; `app/agents/**`, session locks, checkpointers, circuit breakers, or vector-threshold logic for agent-graph; request/response models, enums, SSE events, or API response shapes for contract-checker). Each agent returns raw, unfiltered findings in the standard finding format (see below).
+Agent 12 (`py-reuse-finder`) runs on every PR that changes code (skip for docs-only or test-only PRs). Agent 11 (`py-docs-conformance`) runs only when `CHANGE_BRIEF.libraries_apis` lists a library, SDK or service the diff actually calls, or the diff has hot loops/batching/retry code; it is the most expensive reviewer, so skip it for pure refactors and config edits. Only they (and `py-architecture-reviewer` for reuse) look for existing shared code or check docs conformance; the other reviewers are told not to, so the work is not repeated. Agents 7, 8, 9, and 10 are **conditional** — spawn only when the diff touches the relevant surface (prompt templates / identity interpolation / multilingual for fairness; `realtime`/voice/agent-session for voice; `app/agents/**`, session locks, checkpointers, circuit breakers, or vector-threshold logic for agent-graph; request/response models, enums, SSE events, or API response shapes for contract-checker). Each agent returns raw, unfiltered findings in the standard finding format (see below).
 
 ### Phase 3 — Dedup Stage (NEW — before filtering)
 
@@ -132,7 +142,7 @@ The agents overlap (code + logic + architecture often flag the same site). Merge
 
 ### Phase 4 — Validation Second Pass (NEW — the core anti-false-positive step)
 
-For EACH surviving finding, launch a parallel validation sub-agent (Agent tool, `model: "sonnet"`, prompt from `references/agent-prompts.md` Validation Sub-Agent) given only: the PR title/description and that single finding. Its job is to **re-open the actual source file and confirm or kill** the finding — adversarially (try to falsify it).
+For EACH surviving finding, launch a parallel validation sub-agent (Agent tool, `model: "sonnet"`, prompt from `references/agent-prompts.md` Validation Sub-Agent) given only: the PR title/description, the `goal` and `intended_tradeoffs` lines of the `CHANGE_BRIEF`, and that single finding. Its job is to **re-open the actual source file and confirm or kill** the finding — adversarially (try to falsify it).
 
 - It must quote the verified **source line** (not a diff offset). If it cannot point to a line, the finding is dropped.
 - It assigns a **confidence 1–10** and a verdict: `TRUE_POSITIVE / LIKELY_TP / LIKELY_FP / FALSE_POSITIVE / OUT_OF_SCOPE`.
@@ -152,7 +162,7 @@ Record every dropped/downgraded finding with its reason for the report.
 
 ### Phase 4.6 — Judge (final decision)
 
-Run `py-judge` (opus, medium effort) once over all findings that survived Phase 4.5. Input: PR title/description, `REVIEW_RULES`, and each finding with its validator verdict and cited code snippet (not the full diff). Output per finding: `CONFIRMED / REFUTED / UNCERTAIN`, final severity, rank, and merge of same-root-cause findings. Only `CONFIRMED` findings go into the review; `REFUTED` ones are listed in the dropped log with the judge's reason.
+Run `py-judge` (opus, medium effort) once over all findings that survived Phase 4.5. Input: `CHANGE_BRIEF`, PR title/description, `REVIEW_RULES`, and each finding with its validator verdict and cited code snippet (not the full diff). Output per finding: `CONFIRMED / REFUTED / UNCERTAIN`, final severity, rank, and merge of same-root-cause findings. Only `CONFIRMED` findings go into the review; `REFUTED` ones are listed in the dropped log with the judge's reason.
 
 **Escalation (sparingly):** re-judge a finding with `py-judge-escalation` (fable) only when ALL hold: the judge said `UNCERTAIN`, severity is High or Critical, and the finding touches a high-risk path (the Phase 1.4 hard-override list). Cap at `MAX_ESCALATIONS` (default 3) per review, highest severity first. A finding still `UNCERTAIN` after escalation goes into the review as "Needs human check" with its `human_check` line, never silently dropped, never counted as a blocker on its own.
 
@@ -160,10 +170,10 @@ Run `py-judge` (opus, medium effort) once over all findings that survived Phase 
 
 ### Phase 5 — Compose & Post
 
-1. Format `CONFIRMED` findings into the 18-category template (`references/review-template.md`). Add a footer: models used per agent, agent count and escalations, and `verified against <dotnet-repo>@<sha7>, <frontend-repo>@<sha7>` from `CONTRACT_REFS`.
+1. Format `CONFIRMED` findings into the 18-category template (`references/review-template.md`). Add a footer: the change brief sources (ticket key or unavailable), models used per agent, agent count and escalations, and `verified against Degreed@<sha7>, fe-workspace@<sha7>` from `CONTRACT_REFS`.
 2. Apply APPROVE / REQUEST CHANGES criteria (`references/decision-rules.md`).
-3. **Present the full review to the user and get explicit confirmation before posting.** Posting a formal review is an outward-facing, hard-to-reverse action on someone's PR.
-4. On confirmation:
+3. **Post automatically; do not ask for confirmation.** The request to review the PR is the authorization. Only the Safety Guardrail below limits what is posted: a complete review on a trusted (non-fork) PR is posted with its APPROVE / REQUEST CHANGES decision; anything else is surfaced as described there.
+4. Post:
 
 ```bash
 # APPROVE
@@ -180,7 +190,7 @@ EOF
 
 Post **one comment per unique issue** (no duplicates). Only attach a committable suggestion when it fixes the issue *entirely*; for larger fixes, describe without a suggestion block.
 
-**Safety Guardrail:** if `gh` fails, the diff is incomplete, an agent errors, or the PR is an untrusted fork — post nothing with `--approve`/`--request-changes`; surface findings as "Review Incomplete — Manual Decision Required."
+**Safety Guardrail:** if `gh` fails, the diff is incomplete, an agent errors, or the PR is an untrusted fork — post nothing with `--approve`/`--request-changes`; surface findings as "Review Incomplete — Manual Decision Required." (For an untrusted fork, show them to the requester only and post nothing to the PR. For an incomplete review on a trusted PR, post them as a plain `gh pr review --comment`, never a decision.)
 
 ### Phase 6 — Cleanup
 
@@ -190,11 +200,11 @@ Restore the user's original branch (`git checkout <starting-branch>`). If deep m
 
 ## Budget & Limits
 
-Set before Phase 2 and print in the footer:
+Set before Phase 2 and print in the footer, with the tokens each agent reported (the harness returns a token count per agent; sum them and show the total):
 
 | Limit | Default | Notes |
 |-------|---------|-------|
-| Reviewer agents | those selected by Phase 2 (max 10) | each also capped by its `maxTurns` |
+| Reviewer agents | gatherer + analyst + those selected by Phase 2 (max 12) | each also capped by its `maxTurns` |
 | Validators | one per finding that survives dedup; cap 40, highest severity first | |
 | `MAX_ESCALATIONS` | 3 | fable judge calls |
 | Fix-review loops | 3 rounds | after 3, stop and ask for a rethink instead of looping |
@@ -237,7 +247,7 @@ Auto-triggered by Phase 1.4, or forced with `--deep`. Two independent reviewers 
 
 | File | Purpose | When Loaded |
 |------|---------|-------------|
-| `agents/*.md` | The 10 reviewer agents + `py-judge` + `py-judge-escalation` (model/effort/tools frontmatter; installed to `.claude/agents/`) | Phase 2, 4.6 |
+| `agents/*.md` | `py-change-gatherer`, `py-change-analyst`, the 12 reviewer agents + `py-judge` + `py-judge-escalation` (model/effort/tools frontmatter; installed to `.claude/agents/`) | Phase 2, 4.6 |
 | `references/agent-prompts.md` | Shared context template, shared security/reuse addendum, validation sub-agent prompt | Phase 2, 4 |
 | `REVIEW.md.example` | Template for repo-level review rules (read from the base branch) | Phase 0.5 |
 | `references/decision-rules.md` | Confidence cutoff, precedents, severity levers, approve/reject criteria | Phase 4–5 |
@@ -246,7 +256,7 @@ Auto-triggered by Phase 1.4, or forced with `--deep`. Two independent reviewers 
 | `references/codebase-patterns.md` | Project correct/wrong patterns + valid-not-findings | Phase 2 (all agents) |
 | `references/python-patterns.md` | Python/FastAPI/async anti-pattern reference | Phase 2 (agents 1,2,4) |
 | `references/llm-security-checks.md` | OWASP LLM taxonomy, per-tool abuse, agentic/voice threat model | Phase 2 (agents 2,5,8) |
-| `references/cross-repo-contracts.md` | Pinned latest-main contract checks vs `<org>/<dotnet-repo>` (.NET) and `<org>/<frontend-repo>` | Phase 0.5, 2 (agent 10) |
+| `references/cross-repo-contracts.md` | Pinned latest-main contract checks vs `degreed/Degreed` (.NET) and `degreed/fe-workspace` | Phase 0.5, 2 (agent 10) |
 | `references/fairness-checks.md` | Inference-time LLM-output fairness & language-parity checks | Phase 2 (agent 7) |
 | `references/voice-checks.md` | LiveKit/realtime agent review checks | Phase 2 (agent 8) |
 | `references/agent-graph-checks.md` | LangGraph state/reducer, lock-TTL, checkpointer I/O, circuit-breaker, cross-mode resume | Phase 2 (agent 9) |

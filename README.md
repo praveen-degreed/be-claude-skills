@@ -29,7 +29,7 @@ The skill is named `review-prs-be` so it can sit next to a frontend `review-prs`
 
 Plus `py-judge` (opus) and `py-judge-escalation` (fable, only for uncertain High/Critical findings in high-risk paths, capped per review). The model map is a starting hypothesis; tune it with the eval described in `SKILL.md`.
 
-**Pipeline:** pre-flight gate, pin to live PR head SHA, `REVIEW.md` from the base branch, pinned contract refs, complexity-score auto-deep, parallel agents, dedup, adversarial validation, confidence/precedents filter, judge (+ capped escalation), confirm-before-post. A Budget & Limits section caps agents, validators, escalations and fix loops.
+**Pipeline:** pre-flight gate, pin to live PR head SHA, `REVIEW.md` from the base branch, pinned contract refs, complexity-score auto-deep, parallel agents, dedup, adversarial validation, confidence/precedents filter, judge (+ capped escalation), automatic post (no confirmation; incomplete reviews and untrusted forks are never posted as a decision). A Budget & Limits section caps agents, validators, escalations and fix loops.
 
 ## Installation
 
