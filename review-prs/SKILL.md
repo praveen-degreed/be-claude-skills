@@ -41,13 +41,13 @@ gh pr view <number_or_url> --json url,state,isDraft,author,reviews
 **ALWAYS pin to the live PR head SHA — never trust an existing local checkout (it goes stale while the PR keeps moving):**
 
 ```bash
-HEAD_SHA=$(gh pr view <number> --json headRefOid --jq .headRefOid)
-git fetch origin "pull/<number>/head"          # fetch the exact PR head
-git checkout "$HEAD_SHA"                         # detached HEAD at the live head
-test "$(git rev-parse HEAD)" = "$HEAD_SHA" || abort "checkout != live head"
+# Run inside the repo's checkout. Fetches the live PR head and makes a temp worktree at exactly that commit.
+OUT=$(~/.claude/skills/review-prs-be/scripts/pr-worktree.sh create <number>)
+WORKTREE_PATH=$(echo "$OUT" | sed -n 1p); HEAD_SHA=$(echo "$OUT" | sed -n 2p)
+test "$(git -C "$WORKTREE_PATH" rev-parse HEAD)" = "$HEAD_SHA" || abort "worktree != live head"
 ```
 
-Record `HEAD_SHA` and the starting branch (to restore in Phase 6). Every agent and every validation grep MUST run against `$HEAD_SHA`. If `gh pr diff` and the local tree disagree, the local tree is stale — re-fetch. Set `WORKTREE_PATH = current working directory`, `LOCAL_ACCESS = true`.
+Record `HEAD_SHA` and `WORKTREE_PATH` (removed in Phase 6). The user's own checkout is never changed, so there is no branch to restore. Every agent and every validation grep MUST run inside `$WORKTREE_PATH`. If `gh pr diff` and the worktree disagree (the PR moved), remove it and create a new one. Set `LOCAL_ACCESS = true`. If creating the worktree fails, set `LOCAL_ACCESS = false`, review from `gh pr diff` only and add a `Not verified: code search (<reason>)` line; never fall back to the user's checkout.
 
 > Why this is mandatory: a review run against a stale checkout will "confirm" blockers that were already fixed upstream and post a wrong verdict. Pin the SHA, and key the duplicate-review skip below off that exact SHA.
 
@@ -194,7 +194,13 @@ Post **one comment per unique issue** (no duplicates). Only attach a committable
 
 ### Phase 6 — Cleanup
 
-Restore the user's original branch (`git checkout <starting-branch>`). If deep mode created a team, tear it down. Report completion.
+Remove the temp worktree after posting, and also when the review ends early, aborts or posts nothing:
+
+```bash
+~/.claude/skills/review-prs-be/scripts/pr-worktree.sh cleanup "$WORKTREE_PATH"
+```
+
+The script removes only a `review-wt-<number>.*` directory directly inside the temp dir and refuses anything else; if it errors, say so in one line and never retry with a broader `rm`. If deep mode created a team, tear it down. Report completion.
 
 ---
 
