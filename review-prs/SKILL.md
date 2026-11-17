@@ -138,6 +138,8 @@ Launch the specialized agents IN PARALLEL (Agent tool, background), each with `s
 | `duplication` (new helper that may exist already) | `py-reuse-finder` |
 | `style` or no risk beyond the baseline | none extra |
 
+**The orchestrator never reviews the code in place of the agents, whatever the PR size.** Even a 1-file PR runs the baseline: `py-change-analyst`, `py-code-reviewer` and `py-judge` (cheap, and the only way the review can APPROVE). A review the orchestrator wrote alone, with no agents, is comment-only. **Never run the PR's tests, `pytest`, `ruff` or any code from the PR** (the review runs read-only and such calls are denied); take test and lint results from `checks.txt` and `ci-failures.sh`, and put "tests not run by this review; CI result: ..." under `Not verified`.
+
 `py-code-reviewer` (baseline quality) and the judge always run. `py-simplifier` runs only on a PR with more than 10 changed files or when the brief lists `duplication`. Print the risks you found, the agent chosen for each, and the agents skipped with the reason, at the top of the review. If the brief is unavailable, fall back to the full table below. A complete run of the selected reviewers can still APPROVE; an unresolved risk with no reviewer able to check it is a `Not verified` item and makes the review comment-only.
 
 | # | Agent | Model | Focus |
