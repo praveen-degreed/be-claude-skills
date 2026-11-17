@@ -68,13 +68,15 @@ Record `HEAD_SHA` and `WORKTREE_PATH` (removed in Phase 6). The user's own check
 
 ### Phase 1 — Fetch Context
 
+Fetch the PR ONCE with the scripts (no model, read-only) and let every agent read the local files instead of calling `gh` itself:
+
 ```bash
-gh pr view $PR_NUMBER --json title,body,files,additions,deletions,baseRefName,headRefName,state,author,labels,commits
-gh pr diff $PR_NUMBER
-gh pr diff $PR_NUMBER --stat
+~/.claude/skills/review-prs-be/scripts/fetch-pr.sh <number> --repo <owner/repo> --worktree <worktree path>   # prints the fetch dir; holds pr.diff, files.txt, stats.txt, meta.json, checks.txt, head/<changed files>
+~/.claude/skills/review-prs-be/scripts/triage.sh <fetch dir>         # SIZE, KIND, HINTS, TIER, BASELINE (deterministic first look; the CHANGE_BRIEF `risks:` refines it)
+~/.claude/skills/review-prs-be/scripts/ci-failures.sh <fetch dir>    # only when checks.txt is not empty: WHY CI failed (pytest/ruff), so a review never says "CI red" without a cause
 ```
 
-For a very large diff, do NOT inline it into agents. Check out the branch (Phase 0) and have each agent run `gh pr diff` + read source files from the worktree.
+Call each script by its absolute path as one command (no `cd`, no variables). Fall back to `gh pr view` / `gh pr diff` only if `fetch-pr.sh` fails. For a very large diff, do NOT inline it into agents: give them the fetch dir and the worktree path and have them read `pr.diff` and `head/<path>`.
 
 ### Phase 1.3 — Change Understanding (BEFORE any review)
 
@@ -167,6 +169,8 @@ The agents overlap (code + logic + architecture often flag the same site). Merge
 > **Dedup-failure fallback (graceful degradation):** the dedup step is a single agent and can fail (timeout, stall, socket error). If it errors or returns nothing, **do NOT abort** — skip merging, carry the raw findings straight into Phase 4 validation, and note "dedup skipped — validating unmerged set" in the run log. Validation is per-finding, so unmerged near-duplicates cost a little extra work but never lose a finding; collapse any surviving duplicates by hand in Phase 5. Never let a dedup failure block the verdict.
 
 ### Phase 4 — Validation Second Pass (NEW — the core anti-false-positive step)
+
+**Step 0, free:** before any validator runs, check every finding's citation with `scripts/verify-citations.sh <fetch dir> 'path:line=token' ...` (one call, one quoted argument per finding; `token` is the identifier the finding relies on). A finding whose line does not exist or does not contain its token is re-located or dropped. Only then launch model validators, and only for findings of Medium severity or higher; Low findings that passed the script check go straight on.
 
 For EACH surviving finding, launch a parallel validation sub-agent (Agent tool, `model: "sonnet"`, prompt from `references/agent-prompts.md` Validation Sub-Agent) given only: the PR title/description, the `goal` and `intended_tradeoffs` lines of the `CHANGE_BRIEF`, and that single finding. Its job is to **re-open the actual source file and confirm or kill** the finding — adversarially (try to falsify it).
 
