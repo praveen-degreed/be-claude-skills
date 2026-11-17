@@ -97,7 +97,7 @@ for entry in "${FILES[@]}"; do
     }
 done
 
-chmod +x "$SKILL_DIR/scripts/pr-worktree.sh" 2>/dev/null || true
+chmod +x "$SKILL_DIR"/scripts/*.sh 2>/dev/null || true
 
 # Verify installation
 INSTALLED=0
