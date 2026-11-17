@@ -26,6 +26,7 @@ INSTRUCTIONS:
 - Do NOT re-raise issues marked FIXED in the review history.
 - Turn budget: your `maxTurns` is a hard stop, and an agent that hits it returns NOTHING (the whole run then cannot be approved). Plan to finish by about 75% of it: by then stop exploring and send your report. If you did not cover something, say so under `Not covered:` and still return every finding you have. A partial report is always better than none.
 - For each finding, provide: category, severity, file, line, title, detail, owasp mapping, and an `evidence` line quoting the actual source.
+- Start with {fetch_dir}/digest.txt (the symbols the diff touches and who uses them, already searched: do not search for those callers again), then read the `diffs/<file>.diff` of the files you review, not the whole diff. Read each diff ONCE and keep notes; every extra read puts it in your context again and you pay for it on every later turn.
 - Use the worktree path to read full files when context beyond the diff is needed.
 - Load references/codebase-patterns.md for project-specific patterns.
 - When unsure about a library pattern, use context7 to fetch current documentation.
