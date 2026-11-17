@@ -124,6 +124,11 @@ Launch the specialized agents IN PARALLEL (Agent tool, background), each with `s
 | Medium | 4 to 10 changed files, or a Small PR with a hard override | Small tier plus `py-architecture-reviewer`, `py-impact-analyzer`, `py-contract-checker` (only if a Python request/response model, enum or stream part changed) | `py-docs-conformance`, `py-reuse-finder`, `py-simplifier` |
 | Large | more than 10 changed files | every agent the table selects | none |
 
+**What the code changes decides the tier, the file count is only the starting point.** Start from the file count above, then adjust:
+- **Raise one tier** if the diff changes any of: auth, session or cookie handling, `server.py`, `settings.py`, Redis keys or schema, a Python request/response model, enum or stream part (a contract with the .NET or frontend repos), a prompt, guardrail, persona or tool schema, a new dependency, or (degreed-assistant) the pause/approval, streaming, identity, scope or liveness code in `backend/dg_maestro/**`.
+- **Lower one tier (never below Small)** if the diff changes only tests, docs, comments, formatting, config values or generated files; a docs-only or comment-only diff needs `py-code-reviewer` alone.
+- Use the `CHANGE_BRIEF` from `py-change-analyst` to confirm what the change really does before settling the tier: a one-line change to a security check is a Medium, a 6-file rename is a Small.
+
 Triggers that add an agent to any tier: the diff touches what that agent's row says it covers (voice code adds `py-voice-reviewer`, prompt/persona/masking code adds `py-fairness-reviewer`, a library or SDK the diff newly calls adds `py-docs-conformance`). On `degreed/degreed-assistant`, `py-agent-graph-reviewer` runs in the Small tier only when the diff touches `agent_pause.py`, `agent_stream_tool.py`, `agent_steps.py`, `mrtr.py`, `action_guard.py`, `identity.py` or `gates/`; from Medium up it runs for any `backend/dg_maestro/**` change. Print the tier and the agents skipped, with the reason, at the top of the review. The file counts above are a starting point chosen without a benchmark; adjust them when real reviews show a tier is too thin or too costly.
 
 | # | Agent | Model | Focus |
