@@ -116,6 +116,16 @@ Build a context map (FIXED / STILL OPEN / PARTIALLY FIXED) for every prior findi
 
 Launch the specialized agents IN PARALLEL (Agent tool, background), each with `subagent_type` = its name below. The agent definitions live in `agents/<name>.md` (installed to `.claude/agents/`) and carry their own model, effort, turn cap and read-only tool settings; do not override them. Each receives, in the task prompt: the shared context from `references/agent-prompts.md` (diff, review-history map, worktree path), `REVIEW_RULES`, `CHANGE_BRIEF`, `CONTRACT_REFS`, and the relevant reference files. Every reviewer reads `CHANGE_BRIEF` first and reviews the code against the change's goal, not just a checklist.
 
+**Size tier (cost control; applies before the table below).** Measured: a 2-file, +30/-1 PR ran 12 agents and about 6M tokens, which is far out of proportion. Pick the tier from the PR's changed files and added+deleted lines, then launch only that tier's agents. The tier changes which agents run, never the standard of a finding, and a complete run of the tier can still APPROVE.
+
+| Tier | Test | Agents to run | Skip |
+|------|------|---------------|------|
+| Small | <= 3 files AND <= 150 lines AND no hard override | `py-change-analyst`, `py-code-reviewer`, `py-logic-reviewer`, `py-test-analyzer` (only if tests changed), the judge | all others, unless a trigger below fires |
+| Medium | <= 10 files AND <= 600 lines, or a Small PR with a hard override | Small tier plus `py-architecture-reviewer`, `py-impact-analyzer`, `py-contract-checker` (only if a Python request/response model, enum or stream part changed) | `py-docs-conformance`, `py-reuse-finder`, `py-simplifier` |
+| Large | anything bigger | every agent the table selects | none |
+
+Triggers that add an agent to any tier: the diff touches what that agent's row says it covers (voice code adds `py-voice-reviewer`, prompt/persona/masking code adds `py-fairness-reviewer`, a library or SDK the diff newly calls adds `py-docs-conformance`). On `degreed/degreed-assistant`, `py-agent-graph-reviewer` runs in the Small tier only when the diff touches `agent_pause.py`, `agent_stream_tool.py`, `agent_steps.py`, `mrtr.py`, `action_guard.py`, `identity.py` or `gates/`; from Medium up it runs for any `backend/dg_maestro/**` change. Print the tier and the agents skipped, with the reason, at the top of the review. The sizes above are a starting point chosen without a benchmark; adjust them when real reviews show a tier is too thin or too costly.
+
 | # | Agent | Model | Focus |
 |---|-------|-------|-------|
 | 1 | `py-code-reviewer` | sonnet | endpoint patterns, typing, dead code, memory patterns |
