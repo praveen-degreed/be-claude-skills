@@ -60,6 +60,9 @@ Record `HEAD_SHA` and `WORKTREE_PATH` (removed in Phase 6). The user's own check
    REVIEW_RULES=$(git show "origin/$BASE:REVIEW.md" 2>/dev/null || true)   # empty if absent
    ```
    Pass `REVIEW_RULES` to every agent and the judge. Never read `REVIEW.md` from the PR head. See `REVIEW.md.example`.
+1b. **Repo profile.** If the PR's base repo is `degreed/degreed-assistant`, append `references/degreed-assistant.md` to `REVIEW_RULES`
+   (it wins over the Coach Builder paths and conventions in the agent prompts: `app/...`, `app.log_manager`, LangGraph, LiveKit)
+   and treat `backend/dg_maestro/**` as the agent surface below. Do not apply the Coach Builder-only rules to this repo.
 2. **Contract refs (latest main, pinned):** resolve the default-branch tip SHA of `degreed/Degreed` and `degreed/fe-workspace` once, per `references/cross-repo-contracts.md`, and pass as `CONTRACT_REFS` to every agent. Never read local clones of those repos.
 3. **Budget:** set the run limits in "Budget & Limits" below before spawning anything.
 
@@ -91,6 +94,7 @@ Compute a score to decide depth automatically (no manual flag needed):
 | >500 lines added/deleted | +3 |
 | Touches `app/api/`, `app/llm/`, `app/db/redis_*`, `app/realtime/`, `app/services/validation` | +2 each |
 | Touches `app/agents/**` (LangGraph graph/nodes/state/session-lock/checkpointer) or a new `app/services/<feature>/` package | +2 each |
+| degreed-assistant: touches `backend/dg_maestro/**` (delegate agents: pause/approval, streaming, scope, identity, liveness) | +2 each |
 | Redis schema / vector store / vector-threshold / Pydantic request-response model change | +2 |
 | Prompt template / guardrail / tool-schema change | +2 |
 | New dependency in requirements.txt | +1 |
@@ -122,7 +126,7 @@ Launch the specialized agents IN PARALLEL (Agent tool, background), each with `s
 | 6 | `py-impact-analyzer` | opus | in-repo consumer chains, prompt chains, blast radius |
 | 7 | `py-fairness-reviewer` | sonnet | LLM-output fairness/bias, language parity (conditional) |
 | 8 | `py-voice-reviewer` | sonnet | LiveKit/realtime turn/interruption/budget, voice DTO breakage (conditional) |
-| 9 | `py-agent-graph-reviewer` | opus | LangGraph state/reducer, lock TTL vs budget, checkpointer I/O, circuit breakers, vector distance-vs-similarity (conditional) |
+| 9 | `py-agent-graph-reviewer` | opus | LangGraph state/reducer, lock TTL vs budget, checkpointer I/O, circuit breakers, vector distance-vs-similarity (conditional). On degreed-assistant it runs when the diff touches `backend/dg_maestro/**` and reviews the delegate-agent surface (pause/approval stash, streaming, scope, liveness) per `references/degreed-assistant.md` |
 | 10 | `py-contract-checker` | opus | Python vs .NET `degreed/Degreed` and frontend `degreed/fe-workspace` contract breaks at pinned latest-main SHAs (conditional) |
 | 11 | `py-docs-conformance` | opus | code vs the official docs of the libraries/APIs it uses; documented or built-in alternatives; loop, batching, retry and I/O performance (conditional, see below) |
 | 12 | `py-reuse-finder` | sonnet | existing shared helpers/modules the new code duplicates or bypasses, with a concrete replacement (runs on any code change) |
@@ -259,6 +263,7 @@ Auto-triggered by Phase 1.4, or forced with `--deep`. Two independent reviewers 
 | `references/decision-rules.md` | Confidence cutoff, precedents, severity levers, approve/reject criteria | Phase 4–5 |
 | `references/review-template.md` | GitHub review template (18 categories) | Phase 5 |
 | `references/deep-mode.md` | Adversarial 2-reviewer consensus + self-critique protocol | Phase 1.4 (deep) |
+| `references/degreed-assistant.md` | Repo profile for `degreed/degreed-assistant` (layout, conventions, the Maestro agent surface); wins over the Coach Builder patterns | Phase 0.5 (that repo only) |
 | `references/codebase-patterns.md` | Project correct/wrong patterns + valid-not-findings | Phase 2 (all agents) |
 | `references/python-patterns.md` | Python/FastAPI/async anti-pattern reference | Phase 2 (agents 1,2,4) |
 | `references/llm-security-checks.md` | OWASP LLM taxonomy, per-tool abuse, agentic/voice threat model | Phase 2 (agents 2,5,8) |
