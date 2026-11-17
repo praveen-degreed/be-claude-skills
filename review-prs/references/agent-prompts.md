@@ -24,6 +24,7 @@ INSTRUCTIONS:
 - Anchor every finding in code the diff changes, but read the surrounding design (callers, callees, the code being replaced) before judging it. A cost listed under CHANGE_BRIEF `intended_tradeoffs` is a decision to confirm, not a defect.
 - Ownership: existing-helper reuse is for py-reuse-finder and py-architecture-reviewer; docs conformance, documented built-in alternatives and loop/I-O performance are for py-docs-conformance. Other agents do not repeat them.
 - Do NOT re-raise issues marked FIXED in the review history.
+- Turn budget: your `maxTurns` is a hard stop, and an agent that hits it returns NOTHING (the whole run then cannot be approved). Plan to finish by about 75% of it: by then stop exploring and send your report. If you did not cover something, say so under `Not covered:` and still return every finding you have. A partial report is always better than none.
 - For each finding, provide: category, severity, file, line, title, detail, owasp mapping, and an `evidence` line quoting the actual source.
 - Use the worktree path to read full files when context beyond the diff is needed.
 - Load references/codebase-patterns.md for project-specific patterns.
