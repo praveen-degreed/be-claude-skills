@@ -116,20 +116,27 @@ Build a context map (FIXED / STILL OPEN / PARTIALLY FIXED) for every prior findi
 
 Launch the specialized agents IN PARALLEL (Agent tool, background), each with `subagent_type` = its name below. The agent definitions live in `agents/<name>.md` (installed to `.claude/agents/`) and carry their own model, effort, turn cap and read-only tool settings; do not override them. Each receives, in the task prompt: the shared context from `references/agent-prompts.md` (diff, review-history map, worktree path), `REVIEW_RULES`, `CHANGE_BRIEF`, `CONTRACT_REFS`, and the relevant reference files. Every reviewer reads `CHANGE_BRIEF` first and reviews the code against the change's goal, not just a checklist.
 
-**Size tier (cost control; applies before the table below).** Measured: a 2-file, +30/-1 PR ran 12 agents and about 6M tokens, which is far out of proportion. Pick the tier from the number of changed files only (lines do not matter), then launch only that tier's agents. The tier changes which agents run, never the standard of a finding, and a complete run of the tier can still APPROVE.
+**Pick the reviewers from what the change does, not from its size or paths.** Every step of the pipeline runs on every PR (understand the change, select reviewers, review, dedup, validate, judge, post). Only *which reviewers run* depends on the change. Measured reason: a 2-file, +30/-1 PR ran 12 agents and about 6M tokens, far out of proportion.
 
-| Tier | Test | Agents to run | Skip |
-|------|------|---------------|------|
-| Small | <= 3 changed files and no hard override | `py-change-analyst`, `py-code-reviewer`, `py-logic-reviewer`, `py-test-analyzer` (only if tests changed), the judge | all others, unless a trigger below fires |
-| Medium | 4 to 10 changed files, or a Small PR with a hard override | Small tier plus `py-architecture-reviewer`, `py-impact-analyzer`, `py-contract-checker` (only if a Python request/response model, enum or stream part changed) | `py-docs-conformance`, `py-reuse-finder`, `py-simplifier` |
-| Large | more than 10 changed files | every agent the table selects | none |
+1. Read the `risks:` line of the `CHANGE_BRIEF` (written by `py-change-analyst`): the things this specific change could break, each tagged with a category and the code it concerns.
+2. For each risk, run the one reviewer that can check it. A reviewer with no risk mapped to it does not run.
 
-**What the code changes decides the tier, the file count is only the starting point.** Start from the file count above, then adjust:
-- **Raise one tier** if the diff changes any of: auth, session or cookie handling, `server.py`, `settings.py`, Redis keys or schema, a Python request/response model, enum or stream part (a contract with the .NET or frontend repos), a prompt, guardrail, persona or tool schema, a new dependency, or (degreed-assistant) the pause/approval, streaming, identity, scope or liveness code in `backend/dg_maestro/**`.
-- **Lower one tier (never below Small)** if the diff changes only tests, docs, comments, formatting, config values or generated files; a docs-only or comment-only diff needs `py-code-reviewer` alone.
-- Use the `CHANGE_BRIEF` from `py-change-analyst` to confirm what the change really does before settling the tier: a one-line change to a security check is a Medium, a 6-file rename is a Small.
+| Risk category in the brief | Reviewer |
+|---|---|
+| `logic` (conditions, edge cases, error and cancel paths, async) | `py-logic-reviewer` |
+| `contract` (a model, enum, field or stream part another repo reads) | `py-contract-checker` |
+| `security` (untrusted input, auth, secrets, prompt injection, data exposure) | `py-code-reviewer` + `py-architecture-reviewer` (trust boundary) |
+| `state` (sessions, locks, retries, multi-pod, pause/resume, approvals, streaming) | `py-agent-graph-reviewer` (on degreed-assistant: section 3 of its repo profile) |
+| `tenancy` (org/user scoping of Redis keys, cache, conversations) | `py-architecture-reviewer` |
+| `blast-radius` (shared code, callers, config) | `py-impact-analyzer` |
+| `llm-behavior` (prompt, persona, masking, language, guardrails) | `py-fairness-reviewer` |
+| `voice` | `py-voice-reviewer` |
+| `library` (a library or SDK newly or differently used) | `py-docs-conformance` |
+| `tests` (new behavior with no test, or weak tests) | `py-test-analyzer` |
+| `duplication` (new helper that may exist already) | `py-reuse-finder` |
+| `style` or no risk beyond the baseline | none extra |
 
-Triggers that add an agent to any tier: the diff touches what that agent's row says it covers (voice code adds `py-voice-reviewer`, prompt/persona/masking code adds `py-fairness-reviewer`, a library or SDK the diff newly calls adds `py-docs-conformance`). On `degreed/degreed-assistant`, `py-agent-graph-reviewer` runs in the Small tier only when the diff touches `agent_pause.py`, `agent_stream_tool.py`, `agent_steps.py`, `mrtr.py`, `action_guard.py`, `identity.py` or `gates/`; from Medium up it runs for any `backend/dg_maestro/**` change. Print the tier and the agents skipped, with the reason, at the top of the review. The file counts above are a starting point chosen without a benchmark; adjust them when real reviews show a tier is too thin or too costly.
+`py-code-reviewer` (baseline quality) and the judge always run. `py-simplifier` runs only on a PR with more than 10 changed files or when the brief lists `duplication`. Print the risks you found, the agent chosen for each, and the agents skipped with the reason, at the top of the review. If the brief is unavailable, fall back to the full table below. A complete run of the selected reviewers can still APPROVE; an unresolved risk with no reviewer able to check it is a `Not verified` item and makes the review comment-only.
 
 | # | Agent | Model | Focus |
 |---|-------|-------|-------|

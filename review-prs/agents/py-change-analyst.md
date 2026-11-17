@@ -32,6 +32,7 @@ out_of_scope:   <what the author says is not covered>
 libraries_apis: <external libs/APIs/services touched, with versions from requirements/lock: for the docs-conformance agent>
 code_paths:     <entry points and the main, error, timeout/cancel flows to trace>
 shared_candidates: <existing helpers/modules you noticed that overlap: for the reuse agent, unverified>
+risks:          <what THIS change could break: 1-6 lines, each `category: what and where (file:line)`; categories: logic, contract, security, state, tenancy, blast-radius, llm-behavior, voice, library, tests, duplication, style. Only risks this diff really creates; `style` alone for a docs/comment/format-only change>
 open_questions: <what you could not determine>
 ```
 
