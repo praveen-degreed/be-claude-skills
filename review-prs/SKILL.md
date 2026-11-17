@@ -116,6 +116,28 @@ Build a context map (FIXED / STILL OPEN / PARTIALLY FIXED) for every prior findi
 
 Launch the specialized agents IN PARALLEL (Agent tool, background), each with `subagent_type` = its name below. The agent definitions live in `agents/<name>.md` (installed to `.claude/agents/`) and carry their own model, effort, turn cap and read-only tool settings; do not override them. Each receives, in the task prompt: the shared context from `references/agent-prompts.md` (diff, review-history map, worktree path), `REVIEW_RULES`, `CHANGE_BRIEF`, `CONTRACT_REFS`, and the relevant reference files. Every reviewer reads `CHANGE_BRIEF` first and reviews the code against the change's goal, not just a checklist.
 
+**Pick the reviewers from what the change does, not from its size or paths.** Every step of the pipeline runs on every PR (understand the change, select reviewers, review, dedup, validate, judge, post). Only *which reviewers run* depends on the change. Measured reason: a 2-file, +30/-1 PR ran 12 agents and about 6M tokens, far out of proportion.
+
+1. Read the `risks:` line of the `CHANGE_BRIEF` (written by `py-change-analyst`): the things this specific change could break, each tagged with a category and the code it concerns.
+2. For each risk, run the one reviewer that can check it. A reviewer with no risk mapped to it does not run.
+
+| Risk category in the brief | Reviewer |
+|---|---|
+| `logic` (conditions, edge cases, error and cancel paths, async) | `py-logic-reviewer` |
+| `contract` (a model, enum, field or stream part another repo reads) | `py-contract-checker` |
+| `security` (untrusted input, auth, secrets, prompt injection, data exposure) | `py-code-reviewer` + `py-architecture-reviewer` (trust boundary) |
+| `state` (sessions, locks, retries, multi-pod, pause/resume, approvals, streaming) | `py-agent-graph-reviewer` (on degreed-assistant: section 3 of its repo profile) |
+| `tenancy` (org/user scoping of Redis keys, cache, conversations) | `py-architecture-reviewer` |
+| `blast-radius` (shared code, callers, config) | `py-impact-analyzer` |
+| `llm-behavior` (prompt, persona, masking, language, guardrails) | `py-fairness-reviewer` |
+| `voice` | `py-voice-reviewer` |
+| `library` (a library or SDK newly or differently used) | `py-docs-conformance` |
+| `tests` (new behavior with no test, or weak tests) | `py-test-analyzer` |
+| `duplication` (new helper that may exist already) | `py-reuse-finder` |
+| `style` or no risk beyond the baseline | none extra |
+
+`py-code-reviewer` (baseline quality) and the judge always run. `py-simplifier` runs only on a PR with more than 10 changed files or when the brief lists `duplication`. Print the risks you found, the agent chosen for each, and the agents skipped with the reason, at the top of the review. If the brief is unavailable, fall back to the full table below. A complete run of the selected reviewers can still APPROVE; an unresolved risk with no reviewer able to check it is a `Not verified` item and makes the review comment-only.
+
 | # | Agent | Model | Focus |
 |---|-------|-------|-------|
 | 1 | `py-code-reviewer` | sonnet | endpoint patterns, typing, dead code, memory patterns |
