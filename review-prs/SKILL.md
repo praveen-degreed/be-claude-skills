@@ -72,6 +72,7 @@ Fetch the PR ONCE with the scripts (no model, read-only) and let every agent rea
 
 ```bash
 ~/.claude/skills/review-prs-be/scripts/fetch-pr.sh <number> --repo <owner/repo> --worktree <worktree path>   # prints the fetch dir; holds pr.diff, files.txt, stats.txt, meta.json, checks.txt, head/<changed files>
+~/.claude/skills/review-prs-be/scripts/digest.sh <fetch dir> --root <worktree path>   # ONCE, no model: digest.txt (per changed file: the symbols the diff touches and who uses each) and diffs/<file>.diff (one diff per file); agents read these instead of searching and re-reading the whole diff
 ~/.claude/skills/review-prs-be/scripts/triage.sh <fetch dir>         # SIZE, KIND, HINTS, TIER, BASELINE (deterministic first look; the CHANGE_BRIEF `risks:` refines it)
 ~/.claude/skills/review-prs-be/scripts/ci-failures.sh <fetch dir>    # only when checks.txt is not empty: WHY CI failed (pytest/ruff), so a review never says "CI red" without a cause
 ```

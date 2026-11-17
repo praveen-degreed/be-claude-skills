@@ -73,6 +73,7 @@ FILES=(
     "review-prs/scripts/pr-worktree.sh:$SKILL_DIR/scripts/pr-worktree.sh"
     "review-prs/scripts/fetch-pr.sh:$SKILL_DIR/scripts/fetch-pr.sh"
     "review-prs/scripts/triage.sh:$SKILL_DIR/scripts/triage.sh"
+    "review-prs/scripts/digest.sh:$SKILL_DIR/scripts/digest.sh"
     "review-prs/scripts/ci-failures.sh:$SKILL_DIR/scripts/ci-failures.sh"
     "review-prs/scripts/verify-citations.sh:$SKILL_DIR/scripts/verify-citations.sh"
 )
